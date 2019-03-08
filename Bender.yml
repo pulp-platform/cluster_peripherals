@@ -16,6 +16,8 @@ sources:
       - event_unit/event_unit_mux.sv
       - event_unit/event_unit_sm.sv
       - event_unit/interrupt_mask.sv
+      - event_unit/interfaces/bbmux_config_bus.sv
+      - event_unit/interfaces/clkgate_config_bus.sv
       # Level 1
       - event_unit/HW_barrier.sv
       - event_unit/event_unit_input.sv
