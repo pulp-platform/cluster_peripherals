@@ -38,6 +38,9 @@ sources:
   - icache_ctrl_unit/pri_icache_ctrl_unit.sv
   - icache_ctrl_unit/sp_icache_ctrl_unit.sv
 
+  # Level 0
+  - mmu_config_unit/interfaces/mmu_config_bus.sv
+  # Level 1
   - mmu_config_unit/mmu_config_unit.sv
 
   - perf_counters_unit/perf_counters_unit.sv
