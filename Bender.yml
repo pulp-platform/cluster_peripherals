@@ -24,6 +24,13 @@ sources:
       # Level 2
       - event_unit/event_unit.sv
 
+  # Level 0
+  - icache_ctrl_unit/interfaces/l0_ctrl_unit_bus.sv
+  - icache_ctrl_unit/interfaces/mp_icache_ctrl_unit_bus.sv
+  - icache_ctrl_unit/interfaces/mp_pf_icache_ctrl_unit_bus.sv
+  - icache_ctrl_unit/interfaces/pri_icache_ctrl_unit_bus.sv
+  - icache_ctrl_unit/interfaces/sp_icache_ctrl_unit_bus.sv
+  # Level 1
   - icache_ctrl_unit/icache_ctrl_unit.sv
   - icache_ctrl_unit/mp_icache_ctrl_unit.sv
   - icache_ctrl_unit/mp_pf_icache_ctrl_unit.sv
