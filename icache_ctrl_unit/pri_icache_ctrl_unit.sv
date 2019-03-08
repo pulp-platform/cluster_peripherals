@@ -45,9 +45,9 @@
 
 module pri_icache_ctrl_unit
 #(
-    parameter  NB_CACHE_BANKS = 8,
-    parameter  NB_CORES       = 8,
-    parameter  ID_WIDTH       = 5
+    parameter int NB_CACHE_BANKS  = 8,
+    parameter int NB_CORES        = 8,
+    parameter int ID_WIDTH        = 5
 )
 (
     input logic                                 clk_i,
