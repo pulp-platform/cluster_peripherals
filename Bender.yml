@@ -2,7 +2,7 @@ package:
   name: cluster_peripherals
 
 dependencies:
-  cluster_interconnect: { git: "https://github.com/pulp-platform/cluster_interconnect.git", rev: atomics } # for interfaces # TODO: switch to version once it's released
+  cluster_interconnect: { git: "https://github.com/pulp-platform/cluster_interconnect.git", rev: atomics-v2 } # for interfaces
 
 sources:
   - cluster_control_unit/cluster_control_unit.sv
