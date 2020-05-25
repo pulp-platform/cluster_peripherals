@@ -35,8 +35,8 @@
     `define ENABLE_ICACHE 6'b00_0000
     `define FLUSH_ICACHE  6'b00_0001
 `ifdef FEATURE_ICACHE_STAT  //TO BE TESTED DEEPLY
-    `define CLEAR_CNTS    6'b00_0011 
-    `define ENABLE_CNTS   6'b00_0100
+    `define CLEAR_CNTS    6'b00_0100
+    `define ENABLE_CNTS   6'b00_0101
 `endif
 
 
@@ -321,12 +321,12 @@ endgenerate
 
 
     `ifdef FEATURE_ICACHE_STAT
-              8'h0C: // CLEAR
+              8'h10: // CLEAR
               begin
                 ICACHE_CTRL_REGS[`CLEAR_CNTS] <= wdata;
               end
 
-              8'h10: // ENABLE-DISABLE STAT REGS
+              8'h14: // ENABLE-DISABLE STAT REGS
               begin
                 ICACHE_CTRL_REGS[`ENABLE_CNTS] <= wdata;
               end
