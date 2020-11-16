@@ -31,19 +31,14 @@
 //                                                                               //
 // ============================================================================= //
 
-`include "pulp_soc_defines.sv"
-
-
     `define log2(VALUE) ((VALUE) < ( 1 ) ? 0 : (VALUE) < ( 2 ) ? 1 : (VALUE) < ( 4 ) ? 2 : (VALUE)< (8) ? 3:(VALUE) < ( 16 )  ? 4 : (VALUE) < ( 32 )  ? 5 : (VALUE) < ( 64 )  ? 6 : (VALUE) < ( 128 ) ? 7 : (VALUE) < ( 256 ) ? 8 : (VALUE) < ( 512 ) ? 9 : 10)
 
     `define ENABLE_ICACHE 6'b00_0000
     `define FLUSH_ICACHE  6'b00_0001
     `define FLUSH_L0      6'b00_0010
 
-`ifdef FEATURE_ICACHE_STAT  //TO BE TESTED DEEPLY
     `define CLEAR_CNTS    6'b00_0011 
     `define ENABLE_CNTS   6'b00_0100
-`endif
 
 
 //---------- REGISTER MAP ------------//
@@ -73,9 +68,10 @@
 
 module icache_ctrl_unit
 #(
-    parameter  NB_CACHE_BANKS = 4,
-    parameter  NB_CORES       = 4,
-    parameter  ID_WIDTH       = 5
+    parameter int NB_CACHE_BANKS  = 4,
+    parameter int NB_CORES        = 4,
+    parameter int ID_WIDTH        = 5,
+    parameter bit FEATURE_STAT    = 1'b0
 )
 (
     input logic                                 clk_i,
@@ -89,23 +85,13 @@ module icache_ctrl_unit
 
     int unsigned                             i,j,k,x,y;
 
-`ifdef FEATURE_ICACHE_STAT
-    localparam                          NUM_REGS       = 5;
-`else
-    localparam                          NUM_REGS       = 3;
-`endif
-
+    localparam NUM_REGS = FEATURE_STAT ? 5 : 3;
 
     logic [31:0]                ICACHE_CTRL_REGS[NUM_REGS];
 
     // State of the main FSM
-`ifdef FEATURE_ICACHE_STAT
-    enum logic [2:0] { IDLE, ENABLE_DISABLE_ICACHE, FLUSH_ICACHE_CHECK, FLUSH_ICACHE, FLUSH_L0_BUFFER, COMPLETE_FLUSH_L0_BUFFER, CLEAR_STAT_REGS, ENABLE_STAT_REGS } CS, NS;
-`else
-    enum logic [2:0] { IDLE, ENABLE_DISABLE_ICACHE, FLUSH_ICACHE_CHECK, FLUSH_ICACHE, FLUSH_L0_BUFFER, COMPLETE_FLUSH_L0_BUFFER} CS, NS;
-`endif
-
-
+    enum logic [2:0] { IDLE, ENABLE_DISABLE_ICACHE, FLUSH_ICACHE_CHECK, FLUSH_ICACHE,
+      FLUSH_L0_BUFFER, COMPLETE_FLUSH_L0_BUFFER, CLEAR_STAT_REGS, ENABLE_STAT_REGS } CS, NS;
 
     // Exploded Interface --> PERIPHERAL INTERFACE
     logic                req;
@@ -137,12 +123,10 @@ module icache_ctrl_unit
 
     logic                                       icache_is_private;
 
-`ifdef FEATURE_ICACHE_STAT
     logic [NB_CACHE_BANKS-1:0] [31:0]           hit_count;
     logic [NB_CACHE_BANKS-1:0] [31:0]           trans_count;
     logic [NB_CACHE_BANKS-1:0]                  clear_regs;
     logic [NB_CACHE_BANKS-1:0]                  enable_regs;
-`endif
 
     logic [NB_CACHE_BANKS-1:0]                  pending_trans;
     logic [NB_CACHE_BANKS-1:0]                  req_flush;
@@ -203,14 +187,13 @@ module icache_ctrl_unit
             assign ack_disable[index]                          = IC_ctrl_unit_master_if[index].ctrl_ack_disable;
             assign pending_trans[index]                        = IC_ctrl_unit_master_if[index].ctrl_pending_trans;
 
+            if (FEATURE_STAT) begin
+              assign IC_ctrl_unit_master_if[index].ctrl_clear_regs  = clear_regs[index];
+              assign IC_ctrl_unit_master_if[index].ctrl_enable_regs = enable_regs[index];
 
-      `ifdef FEATURE_ICACHE_STAT
-            assign IC_ctrl_unit_master_if[index].ctrl_clear_regs  = clear_regs[index];
-            assign IC_ctrl_unit_master_if[index].ctrl_enable_regs = enable_regs[index];
-
-            assign hit_count[index]                            = IC_ctrl_unit_master_if[index].ctrl_hit_count;
-            assign trans_count[index]                          = IC_ctrl_unit_master_if[index].ctrl_trans_count; 
-      `endif
+              assign hit_count[index]                            = IC_ctrl_unit_master_if[index].ctrl_hit_count;
+              assign trans_count[index]                          = IC_ctrl_unit_master_if[index].ctrl_trans_count;
+            end
         end
   endgenerate
 
@@ -221,9 +204,9 @@ module icache_ctrl_unit
             req_enable[k]  =   ICACHE_CTRL_REGS[`ENABLE_ICACHE][k];
             req_disable[k] =  ~ICACHE_CTRL_REGS[`ENABLE_ICACHE][k];
             req_flush[k]   =   ICACHE_CTRL_REGS[`FLUSH_ICACHE] [k];
-`ifdef FEATURE_ICACHE_STAT
-            enable_regs[k] =   ICACHE_CTRL_REGS[`ENABLE_CNTS][k];
-`endif
+            if (FEATURE_STAT) begin
+              enable_regs[k] =   ICACHE_CTRL_REGS[`ENABLE_CNTS][k];
+            end
         end
    end
 
@@ -359,17 +342,15 @@ module icache_ctrl_unit
                   icache_is_private <= wdata[0];
               end
 
-    `ifdef FEATURE_ICACHE_STAT
               8'h10: // CLEAR
-              begin
+              if (FEATURE_STAT) begin
                 ICACHE_CTRL_REGS[`CLEAR_CNTS] <= wdata;
               end
 
               8'h14: // ENABLE-DISABLE STAT REGS
-              begin
+              if (FEATURE_STAT) begin
                 ICACHE_CTRL_REGS[`ENABLE_CNTS] <= wdata;
               end
-    `endif
           endcase
         end
 
@@ -395,30 +376,35 @@ module icache_ctrl_unit
         begin
           r_valid <= 1'b1;
 
-          case(addr[7:2])
-          0:  begin r_rdata <= ICACHE_CTRL_REGS[`ENABLE_ICACHE]; end
-          1:  begin r_rdata <= ICACHE_CTRL_REGS[`FLUSH_ICACHE]; end
-          2:  begin r_rdata <= pending_trans; end
-          3:  begin r_rdata <= ICACHE_CTRL_REGS[`FLUSH_L0]; end
-          6'h3C: begin r_rdata <= {31'h0000_0000,icache_is_private}; end
+          if (addr[7:2] <= 3) begin
+            case(addr[7:2])
+              0: r_rdata <= ICACHE_CTRL_REGS[`ENABLE_ICACHE];
+              1: r_rdata <= ICACHE_CTRL_REGS[`FLUSH_ICACHE];
+              2: r_rdata <= pending_trans;
+              3: r_rdata <= ICACHE_CTRL_REGS[`FLUSH_L0];
+            endcase
+          end else if (FEATURE_STAT && addr[7:2] <= 13) begin
+            case (addr[7:2])
+              // Clear and start
+               4: r_rdata <= ICACHE_CTRL_REGS[`CLEAR_CNTS];
+               5: r_rdata <= ICACHE_CTRL_REGS[`ENABLE_CNTS];
 
-    `ifdef FEATURE_ICACHE_STAT
-          // Clear and start
-          4:  begin r_rdata <= ICACHE_CTRL_REGS[`CLEAR_CNTS]; end
-          5:  begin r_rdata <= ICACHE_CTRL_REGS[`ENABLE_CNTS]; end
+               6: r_rdata <= hit_count[0];
+               7: r_rdata <= hit_count[1];
+               8: r_rdata <= hit_count[2];
+               9: r_rdata <= hit_count[3];
 
-          6:  begin r_rdata <= hit_count[0]; end
-          7:  begin r_rdata <= hit_count[1]; end
-          8:  begin r_rdata <= hit_count[2]; end
-          9:  begin r_rdata <= hit_count[3]; end
+              10: r_rdata <= trans_count[0];
+              11: r_rdata <= trans_count[1];
+              12: r_rdata <= trans_count[2];
+              13: r_rdata <= trans_count[3];
+            endcase
+          end else if (addr[7:2] == 6'h3C) begin
+            r_rdata <= {31'h0000_0000,icache_is_private};
+          end else begin
+            r_rdata <= 32'hDEAD_1C70;
+          end
 
-          10:  begin r_rdata <= trans_count[0]; end
-          11:  begin r_rdata <= trans_count[1]; end
-          12:  begin r_rdata <= trans_count[2]; end
-          13:  begin r_rdata <= trans_count[3]; end
-    `endif
-          default : begin r_rdata <= 32'hDEAD_1C70; end
-          endcase
           r_opc   <= 1'b0;
         end
         else //no read --> IS WRITE
@@ -456,9 +442,7 @@ module icache_ctrl_unit
         listen_ack_flush       = 1'b0;
         clear_ack_flush        = 1'b0;
         gnt                    = 1'b0;
-`ifdef FEATURE_ICACHE_STAT
         clear_regs             = '0;
-`endif
 
         case(CS)
 
@@ -479,45 +463,26 @@ module icache_ctrl_unit
                 else // Write registers
                 begin
 
-                      is_write = 1'b1;
-                      case(addr[7:0])
-                        8'h00: // Enable - Disable register
-                        begin
-                            NS = ENABLE_DISABLE_ICACHE;
-                        end //~2'b00
-
-                        8'h04:
-                        begin
-                          NS = FLUSH_ICACHE_CHECK;
-                        end
-
-                        8'h0C :
-                        begin
-                            NS = FLUSH_L0_BUFFER;
-                        end
-
-                    `ifdef FEATURE_ICACHE_STAT
-                        8'h10: // CLEAR
-                        begin
-                          NS = CLEAR_STAT_REGS;
-                        end
-
-                        8'h14: // START
-                        begin
-                          NS = ENABLE_STAT_REGS;
-                        end
-                    `endif
-
-                        8'hF0 :
-                        begin
-                            NS = IDLE;
-                            deliver_response = 1'b1;
-                        end
-
-                        default: begin
-                          NS = IDLE;
-                        end
-                      endcase
+                  is_write = 1'b1;
+                  if (addr[7:0] <= 8'h0C) begin
+                    case (addr[7:0])
+                      8'h00:    NS = ENABLE_DISABLE_ICACHE;
+                      8'h04:    NS = FLUSH_ICACHE_CHECK;
+                      8'h0C:    NS = FLUSH_L0_BUFFER;
+                      default:  NS = IDLE;
+                    endcase
+                  end else if (FEATURE_STAT && addr[7:0] <= 8'h14) begin
+                    case (addr[7:0])
+                      8'h10:    NS = CLEAR_STAT_REGS;
+                      8'h14:    NS = ENABLE_STAT_REGS;
+                      default:  NS = IDLE;
+                    endcase
+                  end else if (addr[7:0] == 8'hF0) begin
+                    NS = IDLE;
+                    deliver_response = 1'b1;
+                  end else begin
+                    NS = IDLE;
+                  end
 
                 end
 
@@ -529,25 +494,23 @@ module icache_ctrl_unit
 
           end //~IDLE
 
-`ifdef FEATURE_ICACHE_STAT
-          CLEAR_STAT_REGS:
-          begin
-             for(x=0; x<NB_CACHE_BANKS; x++)
-             begin
+          CLEAR_STAT_REGS: begin
+            if (FEATURE_STAT) begin
+              for(x=0; x<NB_CACHE_BANKS; x++) begin
                 clear_regs[x]  =   ICACHE_CTRL_REGS[`CLEAR_CNTS][x];
-             end
-
-             deliver_response = 1'b1;
-             NS = IDLE;
+              end
+              deliver_response = 1'b1;
+            end
+            NS = IDLE;
           end //~ CLEAR_STAT_REGS
 
 
-          ENABLE_STAT_REGS:
-          begin
-             deliver_response = 1'b1;
-             NS = IDLE;
+          ENABLE_STAT_REGS: begin
+            if (FEATURE_STAT) begin
+              deliver_response = 1'b1;
+            end
+            NS = IDLE;
           end
-`endif
 
           FLUSH_L0_BUFFER : 
           begin

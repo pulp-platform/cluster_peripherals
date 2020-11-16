@@ -31,23 +31,17 @@
 //                                                                               //
 // ============================================================================= //
 
-`include "pulp_soc_defines.sv"
-    
     `define ENABLE_ICACHE     6'b00_0000 // W only --> Enable or Disable icache (use wdata[0])
     `define FLUSH_ICACHE      6'b00_0001 // W only --> Full FLUSH icache 
     `define SEL_FLUSH_ICACHE  6'b00_0010 // W Only --> Selective FLush (use wdata for address)
     `define ICACHE_STATUS     6'b00_0011 // R Only --> Check if the cache is bypassed (0) oe enabled (1)
 
 
-`ifdef FEATURE_ICACHE_STAT  //TO BE TESTED DEEPLY
     `define CLEAR_CNTS                6'b00_0100 // W Only
     `define ENABLE_CNTS               6'b00_0101 // W and R
 
     `define READ_ICACHE_HIT_CORES     6'b01_0000 // R Only
     `define READ_ICACHE_TRANS_CORES   6'b01_0001 // R Only
-
-`endif
-
 
 //---------- REGISTER MAP ------------//
 // 0x000 --> ENABLE/DISABLE CACHE BANKS                  // W Only
@@ -65,9 +59,10 @@
 
 module new_icache_ctrl_unit
 #(
-    parameter  NB_CACHE_BANKS = 8,
-    parameter  NB_CORES       = 8,
-    parameter  ID_WIDTH       = 9
+    parameter int NB_CACHE_BANKS  = 8,
+    parameter int NB_CORES        = 8,
+    parameter int ID_WIDTH        = 9,
+    parameter bit FEATURE_STAT    = 1'b0
 )
 (
    input logic                                 clk_i,
@@ -89,11 +84,8 @@ module new_icache_ctrl_unit
    logic                                icache_sel_flush_ack_i;
 
     // State of the main FSM
-`ifdef FEATURE_ICACHE_STAT
-    enum logic [2:0] { IDLE, ENABLE_ICACHE,  DISABLE_ICACHE, FLUSH_ICACHE, SEL_FLUSH_ICACHE, CLEAR_STAT_REGS, ENABLE_STAT_REGS } CS, NS;
-`else
-    enum logic [2:0] { IDLE, ENABLE_ICACHE,  DISABLE_ICACHE, FLUSH_ICACHE, SEL_FLUSH_ICACHE } CS, NS;
-`endif
+    enum logic [2:0] { IDLE, ENABLE_ICACHE,  DISABLE_ICACHE, FLUSH_ICACHE, SEL_FLUSH_ICACHE,
+      CLEAR_STAT_REGS, ENABLE_STAT_REGS } CS, NS;
 
     // Exploded Interface --> PERIPHERAL INTERFACE
     logic                         req;
@@ -108,13 +100,10 @@ module new_icache_ctrl_unit
     logic [ID_WIDTH-1:0]          r_id;
     logic [31:0]                  r_rdata;
 
-
-`ifdef FEATURE_ICACHE_STAT
     logic [31:0]                  hit_count;
     logic [31:0]                  trans_count;
     logic                         clear_regs;
     logic                         enable_regs, enable_regs_next;
-`endif
 
     logic                         is_read;
     logic                         is_write;
@@ -148,13 +137,13 @@ module new_icache_ctrl_unit
     assign IC_ctrl_unit_master_if.sel_flush_addr   = icache_sel_flush_addr_o;
     assign icache_sel_flush_ack_i                  = IC_ctrl_unit_master_if.sel_flush_ack;
 
-`ifdef FEATURE_ICACHE_STAT
-    assign IC_ctrl_unit_master_if.ctrl_clear_regs  = clear_regs;
-    assign IC_ctrl_unit_master_if.ctrl_enable_regs = enable_regs;
+    if (FEATURE_STAT) begin
+      assign IC_ctrl_unit_master_if.ctrl_clear_regs  = clear_regs;
+      assign IC_ctrl_unit_master_if.ctrl_enable_regs = enable_regs;
 
-    assign hit_count                               = IC_ctrl_unit_master_if.ctrl_hit_count;
-    assign trans_count                             = IC_ctrl_unit_master_if.ctrl_trans_count; 
-`endif
+      assign hit_count                               = IC_ctrl_unit_master_if.ctrl_hit_count;
+      assign trans_count                             = IC_ctrl_unit_master_if.ctrl_trans_count;
+    end
 
 
 always_ff @(posedge clk_i or negedge rst_ni) 
@@ -165,9 +154,9 @@ begin
       icache_flush_req_o      <= '0;
       icache_sel_flush_req_o  <= '0;
       icache_sel_flush_addr_o <= '0;
-`ifdef FEATURE_ICACHE_STAT
-      enable_regs             <= '0;
-`endif
+      if (FEATURE_STAT) begin
+        enable_regs           <= '0;
+      end
       icache_status           <= '0;
 
       CS                      <= IDLE;
@@ -187,9 +176,10 @@ begin
          
          if((is_write == 1'b1) && ( addr[7:2] == 6'h02))
             icache_sel_flush_addr_o <= wdata;
-`ifdef FEATURE_ICACHE_STAT
-         enable_regs             <= enable_regs_next;
-`endif
+
+         if (FEATURE_STAT) begin
+           enable_regs <= enable_regs_next;
+         end
 
          // sample the ID
          if(req & gnt)
@@ -201,15 +191,25 @@ begin
          begin
             r_valid <= 1'b1;
             r_opc   <= 1'b0;
-            case(addr[7:2])
-               6'h03:    begin r_rdata[31:1] <= '0; r_rdata[0] <= icache_status; end
-`ifdef FEATURE_ICACHE_STAT
-               6'h05:    begin r_rdata[31:1] <= '0; r_rdata[0] <= enable_regs;   end
-               6'h10:    begin r_rdata       <= hit_count;                       end
-               6'h11:    begin r_rdata       <= trans_count;                     end
-`endif
-               default : begin r_rdata       <= 32'hBADD_A555;                   end
-            endcase // addr[7:2]
+            casex ({addr[7:2], FEATURE_STAT})
+              {6'h03, 1'bx}: begin
+                r_rdata[31:1] <= '0;
+                r_rdata[0]    <= icache_status;
+              end
+              {6'h05, 1'b1}: begin
+                r_rdata[31:1] <= '0;
+                r_rdata[0]    <= enable_regs;
+              end
+              {6'h10, 1'b1}: begin
+                r_rdata       <= hit_count;
+              end
+              {6'h11, 1'b1}: begin
+                r_rdata       <= trans_count;
+              end
+              default: begin
+                r_rdata       <= 32'hBADD_A555;
+              end
+            endcase
          end
          else
          begin
@@ -236,79 +236,60 @@ begin
    icache_flush_req_next      =  icache_flush_req_o;
    icache_sel_flush_req_next  =  1'b0;
 
-`ifdef FEATURE_ICACHE_STAT
    clear_regs                 = '0;
    enable_regs_next           =  enable_regs;
-`endif
 
    case(CS)
 
       IDLE:
       begin
-         gnt = 1'b1;
-         if(is_read)
-         begin
-            NS               = IDLE;
-            deliver_response = 1'b1;
-         end
-         else  if(is_write)
-               begin
-                  case(addr[7:2])
-                     6'h00: 
-                     begin
-                        if(wdata[0] == 1'b0)
-                        begin
-                           NS =  DISABLE_ICACHE;
-                           icache_bypass_req_next = 1'b1;
-                        end
-                        else
-                        begin
-                           NS = ENABLE_ICACHE;
-                           icache_bypass_req_next = 1'b0;
-                        end
-                     end
+        gnt = 1'b1;
+        if (is_read) begin
+          NS               = IDLE;
+          deliver_response = 1'b1;
+        end else if (is_write) begin
+          casex ({addr[7:2], FEATURE_STAT})
 
-                     6'h01: 
-                     begin
-                           NS = FLUSH_ICACHE;
-                           icache_flush_req_next = 1'b1;
-                     end
+            {6'h00, 1'bx}: begin
+              if (wdata[0]) begin
+                NS = ENABLE_ICACHE;
+                icache_bypass_req_next = 1'b0;
+              end else begin
+                NS = DISABLE_ICACHE;
+                icache_bypass_req_next = 1'b1;
+              end
+            end
 
-                     6'h02: 
-                     begin
-                           NS = SEL_FLUSH_ICACHE;
-                           icache_sel_flush_req_next  = 1'b1; 
-                     end
+            {6'h01, 1'bx}: begin
+              NS = FLUSH_ICACHE;
+              icache_flush_req_next = 1'b1;
+            end
 
-               `ifdef FEATURE_ICACHE_STAT
-                     6'h04: // CLEAR
-                     begin
-                       NS = IDLE;
-                       clear_regs       = 1'b1;
-                       deliver_response = 1'b1;
-                     end
+            {6'h02, 1'bx}: begin
+              NS = SEL_FLUSH_ICACHE;
+              icache_sel_flush_req_next = 1'b1;
+            end
 
-                     6'h05: // START
-                     begin
-                       NS = IDLE;
-                       enable_regs_next = wdata[0];
-                       deliver_response = 1'b1;
-                     end
-               `endif
+            {6'h04, 1'b1}: begin // CLEAR
+              NS = IDLE;
+              clear_regs = 1'b1;
+              deliver_response = 1'b1;
+            end
 
-                     default:
-                     begin
-                        NS = IDLE;
-                     end
-                  endcase // addr[7:0]
-               end
-               else // no read, no write
-               begin
-                   NS = IDLE;
-               end
+            {6'h05, 1'b1}: begin // START
+              NS = IDLE;
+              enable_regs_next = wdata[0];
+              deliver_response = 1'b1;
+            end
+
+            default: begin
+              NS = IDLE;
+            end
+          endcase
+        end else begin
+          NS = IDLE;
+        end
       end
-
-
 
       ENABLE_ICACHE: 
       begin
@@ -324,8 +305,6 @@ begin
             NS = ENABLE_ICACHE;
          end
       end //~ENABLE_ICACHE
-
-
 
       DISABLE_ICACHE: 
       begin

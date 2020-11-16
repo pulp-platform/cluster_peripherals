@@ -31,18 +31,15 @@
 //                                                                               //
 // ============================================================================= //
 
-`include "pulp_soc_defines.sv"
     `define ENABLE_ICACHE     6'b00_0000
     `define FLUSH_ICACHE      6'b00_0001
     `define SEL_FLUSH_ICACHE  6'b00_0011
-`ifdef FEATURE_ICACHE_STAT  //TO BE TESTED DEEPLY
     `define CLEAR_CNTS        6'b00_0100
     `define ENABLE_CNTS       6'b00_0101
 
     `define READ_ICACHE_HIT_CORES     6'b01_0000 // R Only
     `define READ_ICACHE_TRANS_CORES   6'b01_0001 // R Only
     `define READ_ICACHE_MISS_CORES    6'b01_0001 // R Only
-`endif
 
 
 //-----------------------------------//
@@ -50,9 +47,10 @@
 
 module mp_icache_ctrl_unit
 #(
-    parameter  NB_CACHE_BANKS = 4,
-    parameter  NB_CORES       = 4,
-    parameter  ID_WIDTH       = 5
+    parameter int NB_CACHE_BANKS  = 4,
+    parameter int NB_CORES        = 4,
+    parameter int ID_WIDTH        = 5,
+    parameter bit FEATURE_STAT    = 1'b0
 )
 (
     input logic                                 clk_i,
@@ -64,12 +62,7 @@ module mp_icache_ctrl_unit
 
     int unsigned                             i,j,k,x,y;
 
-`ifdef FEATURE_ICACHE_STAT
-    localparam                          NUM_REGS       = 6;
-`else
-    localparam                          NUM_REGS       = 2;
-`endif
-
+    localparam NUM_REGS = FEATURE_STAT ? 6 : 2;
 
 
     logic                                icache_bypass_req_o;
@@ -86,11 +79,8 @@ module mp_icache_ctrl_unit
     logic [31:0]                ICACHE_CTRL_REGS[NUM_REGS];
 
     // State of the main FSM
-`ifdef FEATURE_ICACHE_STAT
-    enum logic [2:0] { IDLE, ENABLE_ICACHE,  DISABLE_ICACHE, FLUSH_ICACHE_CHECK, SEL_FLUSH_ICACHE, CLEAR_STAT_REGS, ENABLE_STAT_REGS } CS, NS;
-`else
-    enum logic [2:0] { IDLE, ENABLE_ICACHE,  DISABLE_ICACHE, FLUSH_ICACHE_CHECK, SEL_FLUSH_ICACHE } CS, NS;
-`endif
+    enum logic [2:0] { IDLE, ENABLE_ICACHE,  DISABLE_ICACHE, FLUSH_ICACHE_CHECK, SEL_FLUSH_ICACHE,
+      CLEAR_STAT_REGS, ENABLE_STAT_REGS } CS, NS;
 
     // Exploded Interface --> PERIPHERAL INTERFACE
     logic                req;
@@ -110,7 +100,6 @@ module mp_icache_ctrl_unit
     logic                                       r_valid_int;
     logic [31:0]                                r_rdata_int;
 
-`ifdef FEATURE_ICACHE_STAT
     logic [NB_CORES-1:0] [31:0]                 hit_count;
     logic [NB_CORES-1:0] [31:0]                 trans_count;
     logic [NB_CORES-1:0] [31:0]                 miss_count;
@@ -124,7 +113,6 @@ module mp_icache_ctrl_unit
     logic [7:0][31:0]                           bank_hit_count;
     logic [7:0][31:0]                           bank_trans_count;
     logic [7:0][31:0]                           bank_miss_count;
-`endif
 
     logic                                       is_write;
     logic                                       deliver_response;
@@ -161,22 +149,18 @@ module mp_icache_ctrl_unit
     assign icache_sel_flush_ack_i                  = IC_ctrl_unit_master_if.sel_flush_ack;
 
 
-`ifdef FEATURE_ICACHE_STAT
-    assign IC_ctrl_unit_master_if.ctrl_clear_regs  = clear_regs;
-    assign IC_ctrl_unit_master_if.ctrl_enable_regs = enable_regs;
+    if (FEATURE_STAT) begin
+      assign IC_ctrl_unit_master_if.ctrl_clear_regs  = clear_regs;
+      assign IC_ctrl_unit_master_if.ctrl_enable_regs = enable_regs;
 
-    assign global_hit_count    = IC_ctrl_unit_master_if.global_hit_count;
-    assign global_trans_count  = IC_ctrl_unit_master_if.global_trans_count; 
-    assign global_miss_count   = IC_ctrl_unit_master_if.global_miss_count; 
-  
-  generate
+      assign global_hit_count    = IC_ctrl_unit_master_if.global_hit_count;
+      assign global_trans_count  = IC_ctrl_unit_master_if.global_trans_count;
+      assign global_miss_count   = IC_ctrl_unit_master_if.global_miss_count;
 
-    assign bank_hit_count[NB_CORES-1:0]    = IC_ctrl_unit_master_if.bank_hit_count;
-    assign bank_trans_count[NB_CORES-1:0]  = IC_ctrl_unit_master_if.bank_trans_count; 
-    assign bank_miss_count[NB_CORES-1:0]   = IC_ctrl_unit_master_if.bank_miss_count;
-
-  endgenerate
-`endif
+      assign bank_hit_count[NB_CORES-1:0]    = IC_ctrl_unit_master_if.bank_hit_count;
+      assign bank_trans_count[NB_CORES-1:0]  = IC_ctrl_unit_master_if.bank_trans_count;
+      assign bank_miss_count[NB_CORES-1:0]   = IC_ctrl_unit_master_if.bank_miss_count;
+    end
 
 
 
@@ -187,9 +171,9 @@ module mp_icache_ctrl_unit
       icache_flush_req_o      =   ICACHE_CTRL_REGS[`FLUSH_ICACHE];
       icache_sel_flush_addr_o =   ICACHE_CTRL_REGS[`SEL_FLUSH_ICACHE];
 
-`ifdef FEATURE_ICACHE_STAT
-      enable_regs =   ICACHE_CTRL_REGS[`ENABLE_CNTS][NB_CACHE_BANKS-1:0];
-`endif      
+      if (FEATURE_STAT) begin
+        enable_regs = ICACHE_CTRL_REGS[`ENABLE_CNTS][NB_CACHE_BANKS-1:0];
+      end
    end
 
 
@@ -214,45 +198,17 @@ module mp_icache_ctrl_unit
 
         CS                  <= NS;
 
-        if(is_write)
-        begin
-            case(addr[7:0])
-                8'h00: // ENABLE-DISABLE
-                begin
-                      ICACHE_CTRL_REGS[`ENABLE_ICACHE] <= {31'h0000_0000, wdata[0]};
-                end
-
-                8'h04: // FLUSH
-                begin
-                  ICACHE_CTRL_REGS[`FLUSH_ICACHE] <= {31'h0000_0000, wdata[0]};
-                end
-
-                8'h08: // Sel FLUSH
-                begin
-                  ICACHE_CTRL_REGS[`SEL_FLUSH_ICACHE] <= wdata;
-                end
-            `ifdef FEATURE_ICACHE_STAT
-                8'h0C: // CLEAR
-                begin
-                  ICACHE_CTRL_REGS[`CLEAR_CNTS] <= wdata;
-                end
-
-                8'h10: // ENABLE-DISABLE STAT REGS
-                begin
-                  ICACHE_CTRL_REGS[`ENABLE_CNTS] <= wdata;
-                end
-            `endif
-            endcase
+        if (is_write) begin
+          casex ({addr[7:0], FEATURE_STAT})
+            {8'h00, 1'bx}: ICACHE_CTRL_REGS[`ENABLE_ICACHE]     <= {31'h0000_0000, wdata[0]};
+            {8'h04, 1'bx}: ICACHE_CTRL_REGS[`FLUSH_ICACHE]      <= {31'h0000_0000, wdata[0]};
+            {8'h08, 1'bx}: ICACHE_CTRL_REGS[`SEL_FLUSH_ICACHE]  <= wdata;
+            {8'h0C, 1'b1}: ICACHE_CTRL_REGS[`CLEAR_CNTS]        <= wdata;
+            {8'h10, 1'b1}: ICACHE_CTRL_REGS[`ENABLE_CNTS]       <= wdata;
+          endcase
+        end else begin
+          if (clear_flush_reg) ICACHE_CTRL_REGS[`FLUSH_ICACHE]  <= 32'h0000_0000;
         end
-        else // Not Write
-        begin
-            if(clear_flush_reg)
-               ICACHE_CTRL_REGS[`FLUSH_ICACHE] <= 32'h0000_0000;
-        end
-
-
-
-
 
 
         // sample the ID
@@ -267,63 +223,60 @@ module mp_icache_ctrl_unit
         begin
           r_valid <= 1'b1;
 
-          case(addr[7:2])
-          0:  begin r_rdata <= ICACHE_CTRL_REGS[`ENABLE_ICACHE]; end
-          1:  begin r_rdata <= ICACHE_CTRL_REGS[`FLUSH_ICACHE]; end
+          casex ({addr[7:2], FEATURE_STAT})
+            {6'd00, 1'bx}: r_rdata <= ICACHE_CTRL_REGS[`ENABLE_ICACHE];
+            {6'd01, 1'bx}: r_rdata <= ICACHE_CTRL_REGS[`FLUSH_ICACHE];
 
-    `ifdef FEATURE_ICACHE_STAT
-          // Clear and start
-          3:  begin r_rdata <= ICACHE_CTRL_REGS[`CLEAR_CNTS];  end
-          4:  begin r_rdata <= ICACHE_CTRL_REGS[`ENABLE_CNTS]; end
+            {6'd03, 1'b1}: r_rdata <= ICACHE_CTRL_REGS[`CLEAR_CNTS];
+            {6'd04, 1'b1}: r_rdata <= ICACHE_CTRL_REGS[`ENABLE_CNTS];
 
-          5:  begin r_rdata <= global_hit_count   ;  end
-          6:  begin r_rdata <= global_trans_count ;  end
-          7:  begin r_rdata <= global_miss_count  ;  end
-          8:  begin r_rdata <= 32'hFFFF_FFFF;     ;  end
+            {6'd05, 1'b1}: r_rdata <= global_hit_count;
+            {6'd06, 1'b1}: r_rdata <= global_trans_count;
+            {6'd07, 1'b1}: r_rdata <= global_miss_count;
 
-          9 :  begin r_rdata  <= bank_hit_count  [0]; end  
-          10:  begin r_rdata  <= bank_trans_count[0]; end
-          11:  begin r_rdata  <= bank_miss_count [0]; end
+            {6'd09, 1'b1}: r_rdata  <= bank_hit_count  [0];
+            {6'd10, 1'b1}: r_rdata  <= bank_trans_count[0];
+            {6'd11, 1'b1}: r_rdata  <= bank_miss_count [0];
 
-          12:  begin r_rdata  <= bank_hit_count  [1]; end
-          13:  begin r_rdata  <= bank_trans_count[1]; end
-          14:  begin r_rdata  <= bank_miss_count [1]; end
+            {6'd12, 1'b1}: r_rdata  <= bank_hit_count  [1];
+            {6'd13, 1'b1}: r_rdata  <= bank_trans_count[1];
+            {6'd14, 1'b1}: r_rdata  <= bank_miss_count [1];
 
-          15:  begin r_rdata  <= bank_hit_count  [2]; end
-          16:  begin r_rdata  <= bank_trans_count[2]; end
-          17:  begin r_rdata  <= bank_miss_count [2]; end
+            {6'd15, 1'b1}: r_rdata  <= bank_hit_count  [2];
+            {6'd16, 1'b1}: r_rdata  <= bank_trans_count[2];
+            {6'd17, 1'b1}: r_rdata  <= bank_miss_count [2];
 
-          18:  begin r_rdata  <= bank_hit_count  [3]; end
-          19:  begin r_rdata  <= bank_trans_count[3]; end
-          20:  begin r_rdata  <= bank_miss_count [3]; end
+            {6'd18, 1'b1}: r_rdata  <= bank_hit_count  [3];
+            {6'd19, 1'b1}: r_rdata  <= bank_trans_count[3];
+            {6'd20, 1'b1}: r_rdata  <= bank_miss_count [3];
 
-          21:  begin r_rdata  <= bank_hit_count  [4]; end
-          22:  begin r_rdata  <= bank_trans_count[4]; end
-          23:  begin r_rdata  <= bank_miss_count [4]; end
+            {6'd21, 1'b1}: r_rdata  <= bank_hit_count  [4];
+            {6'd22, 1'b1}: r_rdata  <= bank_trans_count[4];
+            {6'd23, 1'b1}: r_rdata  <= bank_miss_count [4];
 
-          24:  begin r_rdata  <= bank_hit_count  [5]; end
-          25:  begin r_rdata  <= bank_trans_count[5]; end
-          26:  begin r_rdata  <= bank_miss_count [5]; end
+            {6'd24, 1'b1}: r_rdata  <= bank_hit_count  [5];
+            {6'd25, 1'b1}: r_rdata  <= bank_trans_count[5];
+            {6'd26, 1'b1}: r_rdata  <= bank_miss_count [5];
 
-          27:  begin r_rdata  <= bank_hit_count  [6]; end
-          28:  begin r_rdata  <= bank_trans_count[6]; end
-          29:  begin r_rdata  <= bank_miss_count [6]; end
+            {6'd27, 1'b1}: r_rdata  <= bank_hit_count  [6];
+            {6'd28, 1'b1}: r_rdata  <= bank_trans_count[6];
+            {6'd29, 1'b1}: r_rdata  <= bank_miss_count [6];
 
-          30:  begin r_rdata  <= bank_hit_count  [7]; end
-          31:  begin r_rdata  <= bank_trans_count[7]; end
-          32:  begin r_rdata  <= bank_miss_count [7]; end
+            {6'd30, 1'b1}: r_rdata  <= bank_hit_count  [7];
+            {6'd31, 1'b1}: r_rdata  <= bank_trans_count[7];
+            {6'd32, 1'b1}: r_rdata  <= bank_miss_count [7];
 
-          33:  begin r_rdata <= 32'hFFFF_FFFF;  end
-          34:  begin r_rdata <= 32'hFFFF_FFFF;  end
-          35:  begin r_rdata <= 32'hFFFF_FFFF;  end
-          36:  begin r_rdata <= 32'hFFFF_FFFF;  end
-          37:  begin r_rdata <= 32'hFFFF_FFFF;  end
-          38:  begin r_rdata <= 32'hFFFF_FFFF;  end
-          39:  begin r_rdata <= 32'hFFFF_FFFF;  end
-          40:  begin r_rdata <= 32'hFFFF_FFFF;  end
+            {6'd08, 1'b1},
+            {6'd33, 1'b1},
+            {6'd34, 1'b1},
+            {6'd35, 1'b1},
+            {6'd36, 1'b1},
+            {6'd37, 1'b1},
+            {6'd38, 1'b1},
+            {6'd39, 1'b1},
+            {6'd40, 1'b1}: r_rdata <= 32'hFFFF_FFFF;
 
-    `endif
-          default : begin r_rdata <= 32'hDEAD_CACE; end
+            default:       r_rdata <= 32'hDEAD_CACE;
           endcase
           r_opc   <= 1'b0;
         end
@@ -346,10 +299,7 @@ module mp_icache_ctrl_unit
         gnt                    = 1'b0;
         icache_sel_flush_req_o = 1'b0;
         clear_flush_reg        = 1'b0;
-
-`ifdef FEATURE_ICACHE_STAT
         clear_regs             = '0;
-`endif
 
         case(CS)
 
@@ -366,48 +316,15 @@ module mp_icache_ctrl_unit
                 end
                 else // Write registers
                 begin
-
-                      is_write = 1'b1;
-
-                      case(addr[7:0])
-                        8'h00: // Enable - Disable register
-                        begin
-                            if(wdata == 0)
-                              NS = DISABLE_ICACHE;
-                            else
-                              NS = ENABLE_ICACHE;
-                        end //~2'b00
-
-                        8'h04:
-                        begin
-                          NS = FLUSH_ICACHE_CHECK;
-                        end
-
-                        8'h08:
-                        begin
-                          NS = SEL_FLUSH_ICACHE;
-                        end
-
-
-                    `ifdef FEATURE_ICACHE_STAT
-                        8'h0C: // CLEAR
-                        begin
-                          NS = CLEAR_STAT_REGS;
-                        end
-
-                        8'h10: // START
-                        begin
-                          NS = ENABLE_STAT_REGS;
-                        end
-                    `endif
-
-
-                        default:
-                        begin
-                          NS               = IDLE;
-                        end
-                      endcase
-
+                  is_write = 1'b1;
+                  casex ({addr[7:0], ENABLE_ICACHE})
+                    {8'h00, 1'bx}: NS = (wdata == 0) ? DISABLE_ICACHE : ENABLE_ICACHE;
+                    {8'h04, 1'bx}: NS = FLUSH_ICACHE_CHECK;
+                    {8'h08, 1'bx}: NS = SEL_FLUSH_ICACHE;
+                    {8'h0C, 1'b1}: NS = CLEAR_STAT_REGS;
+                    {8'h10, 1'b1}: NS = ENABLE_STAT_REGS;
+                    default:       NS = IDLE;
+                  endcase
                 end
 
               end
@@ -418,26 +335,23 @@ module mp_icache_ctrl_unit
 
           end //~IDLE
 
-`ifdef FEATURE_ICACHE_STAT
-          CLEAR_STAT_REGS:
-          begin
-             for(x=0; x<NB_CACHE_BANKS; x++)
-             begin
-                clear_regs[x]  =   ICACHE_CTRL_REGS[`CLEAR_CNTS][x];
-             end
-
-             deliver_response = 1'b1;
-             NS = IDLE;
+          CLEAR_STAT_REGS: begin
+            if (FEATURE_STAT) begin
+              for (x=0; x<NB_CACHE_BANKS; x++) begin
+                clear_regs[x] = ICACHE_CTRL_REGS[`CLEAR_CNTS][x];
+              end
+              deliver_response = 1'b1;
+            end
+            NS = IDLE;
           end //~ CLEAR_STAT_REGS
 
 
-          ENABLE_STAT_REGS:
-          begin
-
-             deliver_response = 1'b1;
-             NS = IDLE;
+          ENABLE_STAT_REGS: begin
+            if (FEATURE_STAT) begin
+              deliver_response = 1'b1;
+            end
+            NS = IDLE;
           end //~ENABLE_STAT_REGS
-`endif
 
 
           ENABLE_ICACHE: 
