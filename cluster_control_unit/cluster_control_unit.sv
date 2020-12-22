@@ -58,6 +58,8 @@
 // 0x88:         TCDM arbitration configuration CH1 (DMA HWCE)
 ////////////////////////////////////////////////////////////////////////////////
 
+import hci_package::*;
+
 module cluster_control_unit
 #(
     parameter NB_CORES      = 4,
@@ -77,8 +79,8 @@ module cluster_control_unit
 
     output logic                      cluster_cg_en_o,
 
-    output logic                      hwpe_sel_o,
     output logic                      hwpe_en_o,
+    output hci_interconnect_ctrl_t    hci_ctrl_o,
 
     output logic                      fregfile_disable_o,
 
@@ -105,8 +107,8 @@ module cluster_control_unit
   logic                               eoc_n;
   logic                               event_n;
 
-  logic                               hwpe_sel_n;
   logic                               hwpe_en_n;
+  logic [10:0]                        hci_ctrl_n, hci_ctrl_q;
 
   logic                               fregfile_disable_n;
 
@@ -124,6 +126,10 @@ module cluster_control_unit
   enum logic [1:0] { RESET, BOOT, WAIT_FETCH, LIMBO } boot_cs, boot_ns;
 
   assign fetch_enable_o  = fetch_en_q;
+
+  assign hci_ctrl_o.arb_policy         = hci_ctrl_q[10:9];
+  assign hci_ctrl_o.hwpe_prio          = hci_ctrl_q[8];
+  assign hci_ctrl_o.low_prio_max_stall = hci_ctrl_q[7:0];
 
   always_comb
   begin
@@ -192,16 +198,16 @@ module cluster_control_unit
           end
 
           3'b011:
-          //      +---------------------------------------------------------+
-          // ADDR |   unused   | fregfile_dis | hwpe_en | hwpe_sel | unused |
-          // 0x18 |   31..13   |      12      |   11    |    10    |  9..0  |
-          //      +---------------------------------------------------------+
+          //      +------------------------------------------------+
+          // ADDR |   unused   | fregfile_dis | hwpe_en | hci_ctrl |
+          // 0x18 |   31..13   |      12      |   11    |  10..0   |
+          //      +------------------------------------------------+
           begin
             rdata_n[OFFSET_2+OFFSET_1+1]          = 0;
             rdata_n[OFFSET_2+OFFSET_1  ]          = 0;
             rdata_n[OFFSET_2+OFFSET_1-1:OFFSET_1] = 0;
             rdata_n[OFFSET_1-1:0]                 = 0;
-            rdata_n[OFFSET_2+OFFSET_1+2]          = hwpe_sel_o;
+            rdata_n[OFFSET_2+OFFSET_1+2:0]        = hci_ctrl_q;
             rdata_n[OFFSET_2+OFFSET_1+3]          = hwpe_en_o;
             rdata_n[OFFSET_2+OFFSET_1+4]          = fregfile_disable_o;
           end
@@ -241,8 +247,8 @@ module cluster_control_unit
   // write logic
   always_comb
   begin
-    hwpe_sel_n  = hwpe_sel_o;
     hwpe_en_n   = hwpe_en_o;
+    hci_ctrl_n  = hci_ctrl_q;
 
     fregfile_disable_n = fregfile_disable_o;
 
@@ -278,7 +284,7 @@ module cluster_control_unit
           end
 
           3'b011: begin
-            hwpe_sel_n = speriph_slave.wdata[OFFSET_2+OFFSET_1+2];
+            hci_ctrl_n = speriph_slave.wdata[OFFSET_2+OFFSET_1+2:0];
             hwpe_en_n = speriph_slave.wdata[OFFSET_2+OFFSET_1+3];
             fregfile_disable_n = speriph_slave.wdata[OFFSET_2+OFFSET_1+4];
           end
@@ -318,8 +324,8 @@ module cluster_control_unit
       id_q              <= '0;
       rvalid_q          <= 1'b0;
        
-      hwpe_sel_o        <= 1'b1;
       hwpe_en_o         <= 1'b0;
+      hci_ctrl_q        <= '0;
 
       fregfile_disable_o<= 1'b0;
 
@@ -345,8 +351,8 @@ module cluster_control_unit
         id_q    <= id_n;
       end
       
-      hwpe_sel_o        <= hwpe_sel_n;
       hwpe_en_o         <= hwpe_en_n;
+      hci_ctrl_q        <= hci_ctrl_n;
 
       fregfile_disable_o<= fregfile_disable_n;
 
