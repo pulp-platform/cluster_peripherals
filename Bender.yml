@@ -1,6 +1,9 @@
 package:
   name: cluster_peripherals
 
+dependencies:
+  hci: { git: "https://github.com/pulp-platform/hci.git", version: "1.0" }
+
 sources:
   - cluster_control_unit/cluster_control_unit.sv
 
