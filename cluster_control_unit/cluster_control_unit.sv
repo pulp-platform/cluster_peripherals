@@ -58,9 +58,9 @@
 // 0x88:         TCDM arbitration configuration CH1 (DMA HWCE)
 ////////////////////////////////////////////////////////////////////////////////
 
-import hci_package::*;
 
 module cluster_control_unit
+import hci_package::*;
 #(
     parameter NB_CORES      = 4,
     parameter PER_ID_WIDTH  = 5,
