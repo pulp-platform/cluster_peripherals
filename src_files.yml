@@ -18,7 +18,7 @@ event_unit:
   ]
 icache_ctrl_unit:
   incdirs: [
-    ../../rtl/includes,
+    ../../hw/includes,
   ]
   files: [
     icache_ctrl_unit/icache_ctrl_unit.sv,
