@@ -54,8 +54,9 @@
 //               When bit is set, core will be part of mask group and stopped
 //               when one of the members of the group stops
 // 0x040-0x07F:  Boot Addresses. Each core has its own 32-bit boot address
-// 0x80:         TCDM arbitration configuration CH0 (CORE)
-// 0x88:         TCDM arbitration configuration CH1 (DMA HWCE)
+// 0x080:        TCDM arbitration configuration CH0 (CORE)
+// 0x088:        TCDM arbitration configuration CH1 (DMA HWCE)
+// 0x100:        Return value internal to the cluster.
 ////////////////////////////////////////////////////////////////////////////////
 
 
@@ -99,6 +100,7 @@ import hci_package::*;
   logic                               rvalid_q, rvalid_n;
   logic [PER_ID_WIDTH-1:0]            id_q, id_n;
   logic [31:0]                        rdata_q, rdata_n;
+  logic [31:0]                        ret_val_n, ret_val_q;
   logic [NB_CORES-1:0]                fetch_en_q, fetch_en_n;
 
   logic [NB_CORES-1:0]                dbg_halt_mask_q, dbg_halt_mask_n;
@@ -184,8 +186,8 @@ import hci_package::*;
     if (speriph_slave.req && speriph_slave.wen)
     begin
 
-      case (speriph_slave.add[7:6])
-      2'b00: begin
+      case (speriph_slave.add[8:6])
+      3'b000: begin
         case (speriph_slave.add[5:3])
           3'b000:
           begin
@@ -220,12 +222,12 @@ import hci_package::*;
         endcase
       end
 
-      2'b01:
+      3'b001:
       begin
         rdata_n = boot_addr_n[speriph_slave.add[5:2]];
       end
 
-      2'b10, 2'b11:
+      3'b010, 2'b011:
       begin
           case(speriph_slave.add[3])
           1'b0:
@@ -240,7 +242,11 @@ import hci_package::*;
           endcase // speriph_slave.add[3]
       end
 
-    endcase // speriph_slave.add[7:6]
+      3'b100:
+      begin
+          rdata_n = ret_val_q;
+      end
+    endcase // speriph_slave.add[8:6]
     end
   end
 
@@ -264,11 +270,13 @@ import hci_package::*;
     core_resume_o   = '0;
     dbg_halt_mask_n = dbg_halt_mask_q;
 
+    ret_val_n = ret_val_q;
+
     if (speriph_slave.req && (~speriph_slave.wen))
     begin
 
-      case (speriph_slave.add[7:6])
-      2'b00:
+      case (speriph_slave.add[8:6])
+      3'b000:
       begin
         case (speriph_slave.add[5:3])
           3'b000: begin
@@ -299,19 +307,24 @@ import hci_package::*;
           end
         endcase
       end
-      2'b01:
+      3'b001:
       begin
         boot_addr_n[speriph_slave.add[5:2]] = speriph_slave.wdata;
       end
 
-      2'b11,2'b10:
+      3'b011,3'b010:
       begin
         case (speriph_slave.add[5:3])
         3'b000:  TCDM_arb_policy_n[0] = speriph_slave.wdata[0];
         3'b001:  TCDM_arb_policy_n[1] = speriph_slave.wdata[0];
         endcase
       end
-    endcase // speriph_slave.add[7:6]
+
+      3'b100:
+      begin
+          ret_val_n = speriph_slave.wdata;
+      end
+    endcase // speriph_slave.add[8:6]
     end
   end
 
@@ -340,6 +353,8 @@ import hci_package::*;
       TCDM_arb_policy_o <= 2'b00;
 
       boot_addr_o       <= '{default: BOOT_ADDR};
+
+      ret_val_q         <= '0;
     end
     else
     begin
@@ -367,6 +382,8 @@ import hci_package::*;
       boot_addr_o       <= boot_addr_n;
 
       TCDM_arb_policy_o <= TCDM_arb_policy_n;
+
+      ret_val_q <= ret_val_n;
 
       if (start_fetch)
         fetch_en_q <= '1;
