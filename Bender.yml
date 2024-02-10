@@ -2,7 +2,7 @@ package:
   name: cluster_peripherals
 
 dependencies:
-  hci:                    { git: "https://github.com/pulp-platform/hci.git", rev: b2e6f391aa6c10c03f45b693d80a0aaddecf169b } # branch: master
+  hci:                    { git: "https://github.com/pulp-platform/hci.git", rev: v1.1 }
 
 sources:
   - cluster_control_unit/cluster_control_unit.sv
