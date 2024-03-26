@@ -133,8 +133,9 @@ import hci_package::*;
 
   assign fetch_enable_o  = fetch_en_q;
 
-  assign hci_ctrl_o.arb_policy         = hci_ctrl_q[10:9];
-  assign hci_ctrl_o.hwpe_prio          = hci_ctrl_q[8];
+  // Invert HCI interconnect priority from CORES > HWPE to HWPE > CORES
+  assign hci_ctrl_o.invert_prio        = hci_ctrl_q[8];
+  // Max number of (consecutive) stalls supported
   assign hci_ctrl_o.low_prio_max_stall = hci_ctrl_q[7:0];
 
   always_comb
