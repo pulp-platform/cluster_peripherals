@@ -128,7 +128,7 @@ import hci_package::*;
   assign fetch_enable_o  = fetch_en_q;
 
   assign hci_ctrl_o.arb_policy         = hci_ctrl_q[10:9];
-  assign hci_ctrl_o.hwpe_prio          = hci_ctrl_q[8];
+  assign hci_ctrl_o.invert_prio          = hci_ctrl_q[8];
   assign hci_ctrl_o.low_prio_max_stall = hci_ctrl_q[7:0];
 
   always_comb
