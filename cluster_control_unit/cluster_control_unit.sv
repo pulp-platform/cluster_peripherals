@@ -54,18 +54,21 @@
 //               When bit is set, core will be part of mask group and stopped
 //               when one of the members of the group stops
 // 0x040-0x07F:  Boot Addresses. Each core has its own 32-bit boot address
-// 0x80:         TCDM arbitration configuration CH0 (CORE)
-// 0x88:         TCDM arbitration configuration CH1 (DMA HWCE)
+// 0x080:        TCDM arbitration configuration CH0 (CORE)
+// 0x088:        TCDM arbitration configuration CH1 (DMA HWCE)
+// 0x100:        Return value internal to the cluster.
 ////////////////////////////////////////////////////////////////////////////////
 
 
 module cluster_control_unit
 import hci_package::*;
 #(
-    parameter NB_CORES      = 4,
-    parameter PER_ID_WIDTH  = 5,
-    parameter ROM_BOOT_ADDR = 32'h1A000000,
-    parameter BOOT_ADDR     = 32'h1C000000
+    parameter NB_CORES       = 4,
+    parameter PER_ID_WIDTH   = 5,
+    parameter ROM_BOOT_ADDR  = 32'h1A000000,
+    parameter BOOT_ADDR      = 32'h1C000000,
+    parameter NB_HWPES       = 8,
+    localparam HWPE_SEL_BITS = $clog2(NB_HWPES)
 )
 (
     input logic                       clk_i,
@@ -80,6 +83,7 @@ import hci_package::*;
     output logic                      cluster_cg_en_o,
 
     output logic                      hwpe_en_o,
+    output logic [HWPE_SEL_BITS-1:0]  hwpe_sel_o,
     output hci_interconnect_ctrl_t    hci_ctrl_o,
 
     output logic                      fregfile_disable_o,
@@ -99,6 +103,7 @@ import hci_package::*;
   logic                               rvalid_q, rvalid_n;
   logic [PER_ID_WIDTH-1:0]            id_q, id_n;
   logic [31:0]                        rdata_q, rdata_n;
+  logic [31:0]                        ret_val_n, ret_val_q;
   logic [NB_CORES-1:0]                fetch_en_q, fetch_en_n;
 
   logic [NB_CORES-1:0]                dbg_halt_mask_q, dbg_halt_mask_n;
@@ -108,6 +113,7 @@ import hci_package::*;
   logic                               event_n;
 
   logic                               hwpe_en_n;
+  logic [HWPE_SEL_BITS-1:0]           hwpe_sel_n;
   logic [10:0]                        hci_ctrl_n, hci_ctrl_q;
 
   logic                               fregfile_disable_n;
@@ -127,8 +133,9 @@ import hci_package::*;
 
   assign fetch_enable_o  = fetch_en_q;
 
-  assign hci_ctrl_o.arb_policy         = hci_ctrl_q[10:9];
-  assign hci_ctrl_o.hwpe_prio          = hci_ctrl_q[8];
+  // Invert HCI interconnect priority from CORES > HWPE to HWPE > CORES
+  assign hci_ctrl_o.invert_prio        = hci_ctrl_q[8];
+  // Max number of (consecutive) stalls supported
   assign hci_ctrl_o.low_prio_max_stall = hci_ctrl_q[7:0];
 
   always_comb
@@ -184,8 +191,8 @@ import hci_package::*;
     if (speriph_slave.req && speriph_slave.wen)
     begin
 
-      case (speriph_slave.add[7:6])
-      2'b00: begin
+      case (speriph_slave.add[8:6])
+      3'b000: begin
         case (speriph_slave.add[5:3])
           3'b000:
           begin
@@ -198,10 +205,10 @@ import hci_package::*;
           end
 
           3'b011:
-          //      +------------------------------------------------+
-          // ADDR |   unused   | fregfile_dis | hwpe_en | hci_ctrl |
-          // 0x18 |   31..13   |      12      |   11    |  10..0   |
-          //      +------------------------------------------------+
+          //      +---------------------------------------------------------------------------------+
+          // ADDR |        unused        |       hwpe_sel       | fregfile_dis | hwpe_en | hci_ctrl |
+          // 0x18 | 31..13+HWPE_SEL_BITS | 12+HWPE_SEL_BITS..13 |      12      |   11    |  10..0   |
+          //      +---------------------------------------------------------------------------------+
           begin
             rdata_n[OFFSET_2+OFFSET_1+1]          = 0;
             rdata_n[OFFSET_2+OFFSET_1  ]          = 0;
@@ -210,6 +217,7 @@ import hci_package::*;
             rdata_n[OFFSET_2+OFFSET_1+2:0]        = hci_ctrl_q;
             rdata_n[OFFSET_2+OFFSET_1+3]          = hwpe_en_o;
             rdata_n[OFFSET_2+OFFSET_1+4]          = fregfile_disable_o;
+            rdata_n[OFFSET_2+OFFSET_1+5+:HWPE_SEL_BITS] = hwpe_sel_o;
           end
 
           3'b100: rdata_n[0] = cluster_cg_en_o;
@@ -220,12 +228,12 @@ import hci_package::*;
         endcase
       end
 
-      2'b01:
+      3'b001:
       begin
         rdata_n = boot_addr_n[speriph_slave.add[5:2]];
       end
 
-      2'b10, 2'b11:
+      3'b010, 2'b011:
       begin
           case(speriph_slave.add[3])
           1'b0:
@@ -240,7 +248,11 @@ import hci_package::*;
           endcase // speriph_slave.add[3]
       end
 
-    endcase // speriph_slave.add[7:6]
+      3'b100:
+      begin
+          rdata_n = ret_val_q;
+      end
+    endcase // speriph_slave.add[8:6]
     end
   end
 
@@ -248,6 +260,7 @@ import hci_package::*;
   always_comb
   begin
     hwpe_en_n   = hwpe_en_o;
+    hwpe_sel_n  = hwpe_sel_o;
     hci_ctrl_n  = hci_ctrl_q;
 
     fregfile_disable_n = fregfile_disable_o;
@@ -264,11 +277,13 @@ import hci_package::*;
     core_resume_o   = '0;
     dbg_halt_mask_n = dbg_halt_mask_q;
 
+    ret_val_n = ret_val_q;
+
     if (speriph_slave.req && (~speriph_slave.wen))
     begin
 
-      case (speriph_slave.add[7:6])
-      2'b00:
+      case (speriph_slave.add[8:6])
+      3'b000:
       begin
         case (speriph_slave.add[5:3])
           3'b000: begin
@@ -287,6 +302,7 @@ import hci_package::*;
             hci_ctrl_n = speriph_slave.wdata[OFFSET_2+OFFSET_1+2:0];
             hwpe_en_n = speriph_slave.wdata[OFFSET_2+OFFSET_1+3];
             fregfile_disable_n = speriph_slave.wdata[OFFSET_2+OFFSET_1+4];
+            hwpe_sel_n = speriph_slave.wdata[OFFSET_2+OFFSET_1+5+:HWPE_SEL_BITS];
           end
           3'b100: begin
             cluster_cg_en_n = speriph_slave.wdata[0];
@@ -299,19 +315,24 @@ import hci_package::*;
           end
         endcase
       end
-      2'b01:
+      3'b001:
       begin
         boot_addr_n[speriph_slave.add[5:2]] = speriph_slave.wdata;
       end
 
-      2'b11,2'b10:
+      3'b011,3'b010:
       begin
         case (speriph_slave.add[5:3])
         3'b000:  TCDM_arb_policy_n[0] = speriph_slave.wdata[0];
         3'b001:  TCDM_arb_policy_n[1] = speriph_slave.wdata[0];
         endcase
       end
-    endcase // speriph_slave.add[7:6]
+
+      3'b100:
+      begin
+          ret_val_n = speriph_slave.wdata;
+      end
+    endcase // speriph_slave.add[8:6]
     end
   end
 
@@ -323,8 +344,9 @@ import hci_package::*;
       rdata_q           <= '0;
       id_q              <= '0;
       rvalid_q          <= 1'b0;
-       
+
       hwpe_en_o         <= 1'b0;
+      hwpe_sel_o        <= 1'b0;
       hci_ctrl_q        <= '0;
 
       fregfile_disable_o<= 1'b0;
@@ -340,6 +362,8 @@ import hci_package::*;
       TCDM_arb_policy_o <= 2'b00;
 
       boot_addr_o       <= '{default: BOOT_ADDR};
+
+      ret_val_q         <= '0;
     end
     else
     begin
@@ -350,8 +374,9 @@ import hci_package::*;
         rdata_q <= rdata_n;
         id_q    <= id_n;
       end
-      
+
       hwpe_en_o         <= hwpe_en_n;
+      hwpe_sel_o        <= hwpe_sel_n;
       hci_ctrl_q        <= hci_ctrl_n;
 
       fregfile_disable_o<= fregfile_disable_n;
@@ -367,6 +392,8 @@ import hci_package::*;
       boot_addr_o       <= boot_addr_n;
 
       TCDM_arb_policy_o <= TCDM_arb_policy_n;
+
+      ret_val_q <= ret_val_n;
 
       if (start_fetch)
         fetch_en_q <= '1;
