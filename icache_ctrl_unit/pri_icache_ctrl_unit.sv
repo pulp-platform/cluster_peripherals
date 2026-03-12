@@ -31,12 +31,6 @@
 //                                                                               //
 // ============================================================================= //
 
-    `define ENABLE_ICACHE 6'b00_0000
-    `define FLUSH_ICACHE  6'b00_0001
-    `define CLEAR_CNTS    6'b00_0011 
-    `define ENABLE_CNTS   6'b00_0100
-
-
 //-----------------------------------//
 
 
@@ -57,6 +51,11 @@ module pri_icache_ctrl_unit
 
    int unsigned                             i,j,k,x,y;
    genvar index;
+
+    localparam logic [5:0] REG_ENABLE_ICACHE = 6'b00_0000;
+    localparam logic [5:0] REG_FLUSH_ICACHE  = 6'b00_0001;
+    localparam logic [5:0] REG_CLEAR_CNTS    = 6'b00_0011;
+    localparam logic [5:0] REG_ENABLE_CNTS   = 6'b00_0100;
 
 
     localparam NUM_REGS = FEATURE_STAT ? 6 : 2;
@@ -176,10 +175,10 @@ endgenerate
  
    always_comb
    begin : REGISTER_BIND_OUT
-      icache_bypass_req_o  =  ~ICACHE_CTRL_REGS[`ENABLE_ICACHE][NB_CORES-1:0];
-      icache_flush_req_o   =   ICACHE_CTRL_REGS[`FLUSH_ICACHE][NB_CORES-1:0];
+      icache_bypass_req_o  =  ~ICACHE_CTRL_REGS[REG_ENABLE_ICACHE][NB_CORES-1:0];
+      icache_flush_req_o   =   ICACHE_CTRL_REGS[REG_FLUSH_ICACHE][NB_CORES-1:0];
       if (FEATURE_STAT) begin
-        enable_regs = ICACHE_CTRL_REGS[`ENABLE_CNTS][NB_CORES-1:0];
+        enable_regs = ICACHE_CTRL_REGS[REG_ENABLE_CNTS][NB_CORES-1:0];
       end
    end
 
@@ -291,10 +290,10 @@ endgenerate
         if(is_write)
         begin
           casex ({addr[7:0], FEATURE_STAT})
-            {8'h00, 1'bx}: ICACHE_CTRL_REGS[`ENABLE_ICACHE] <= wdata;
-            {8'h04, 1'bx}: ICACHE_CTRL_REGS[`FLUSH_ICACHE]  <= wdata;
-            {8'h0C, 1'b1}: ICACHE_CTRL_REGS[`CLEAR_CNTS]    <= wdata;
-            {8'h10, 1'b1}: ICACHE_CTRL_REGS[`ENABLE_CNTS]   <= wdata;
+            {8'h00, 1'bx}: ICACHE_CTRL_REGS[REG_ENABLE_ICACHE] <= wdata;
+            {8'h04, 1'bx}: ICACHE_CTRL_REGS[REG_FLUSH_ICACHE]  <= wdata;
+            {8'h0C, 1'b1}: ICACHE_CTRL_REGS[REG_CLEAR_CNTS]    <= wdata;
+            {8'h10, 1'b1}: ICACHE_CTRL_REGS[REG_ENABLE_CNTS]   <= wdata;
           endcase
         end
 
@@ -309,12 +308,12 @@ endgenerate
         if (is_read) begin
           r_valid <= 1'b1;
           casex ({addr[7:2], FEATURE_STAT})
-            {6'd00, 1'bx}:  r_rdata <= ICACHE_CTRL_REGS[`ENABLE_ICACHE];
-            {6'd01, 1'bx}:  r_rdata <= ICACHE_CTRL_REGS[`FLUSH_ICACHE];
+            {6'd00, 1'bx}:  r_rdata <= ICACHE_CTRL_REGS[REG_ENABLE_ICACHE];
+            {6'd01, 1'bx}:  r_rdata <= ICACHE_CTRL_REGS[REG_FLUSH_ICACHE];
             {6'd02, 1'bx}:  r_rdata <= 32'hBADD_A555;
 
-            {6'd03, 1'b1}:  r_rdata <= ICACHE_CTRL_REGS[`CLEAR_CNTS];
-            {6'd04, 1'b1}:  r_rdata <= ICACHE_CTRL_REGS[`ENABLE_CNTS];
+            {6'd03, 1'b1}:  r_rdata <= ICACHE_CTRL_REGS[REG_CLEAR_CNTS];
+            {6'd04, 1'b1}:  r_rdata <= ICACHE_CTRL_REGS[REG_ENABLE_CNTS];
 
             {6'd05, 1'b1}:  r_rdata <= global_hit_count;
             {6'd06, 1'b1}:  r_rdata <= global_trans_count;
@@ -420,10 +419,10 @@ endgenerate
                 end else begin // Write registers
                   is_write = 1'b1;
                   casex ({addr[7:2], FEATURE_STAT})
-                    {`ENABLE_ICACHE,  1'bx}:  NS = (wdata == 0) ? DISABLE_ICACHE : ENABLE_ICACHE;
-                    {`FLUSH_ICACHE,   1'bx}:  NS = FLUSH_ICACHE_CHECK;
-                    {`CLEAR_CNTS,     1'b1}:  NS = CLEAR_STAT_REGS;
-                    {`ENABLE_CNTS,    1'b1}:  NS = ENABLE_STAT_REGS;
+                    {REG_ENABLE_ICACHE,  1'bx}:  NS = (wdata == 0) ? DISABLE_ICACHE : ENABLE_ICACHE;
+                    {REG_FLUSH_ICACHE,   1'bx}:  NS = FLUSH_ICACHE_CHECK;
+                    {REG_CLEAR_CNTS,     1'b1}:  NS = CLEAR_STAT_REGS;
+                    {REG_ENABLE_CNTS,    1'b1}:  NS = ENABLE_STAT_REGS;
                     default:                  NS = IDLE;
                   endcase
                 end
@@ -439,7 +438,7 @@ endgenerate
           CLEAR_STAT_REGS: begin
             if (FEATURE_STAT) begin
               for(x=0; x<NB_CACHE_BANKS; x++) begin
-                clear_regs[x]  =   ICACHE_CTRL_REGS[`CLEAR_CNTS][x];
+                clear_regs[x]  =   ICACHE_CTRL_REGS[REG_CLEAR_CNTS][x];
               end
               deliver_response = 1'b1;
             end

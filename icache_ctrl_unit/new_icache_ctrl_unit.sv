@@ -31,18 +31,6 @@
 //                                                                               //
 // ============================================================================= //
 
-    `define ENABLE_ICACHE     6'b00_0000 // W only --> Enable or Disable icache (use wdata[0])
-    `define FLUSH_ICACHE      6'b00_0001 // W only --> Full FLUSH icache 
-    `define SEL_FLUSH_ICACHE  6'b00_0010 // W Only --> Selective FLush (use wdata for address)
-    `define ICACHE_STATUS     6'b00_0011 // R Only --> Check if the cache is bypassed (0) oe enabled (1)
-
-
-    `define CLEAR_CNTS                6'b00_0100 // W Only
-    `define ENABLE_CNTS               6'b00_0101 // W and R
-
-    `define READ_ICACHE_HIT_CORES     6'b01_0000 // R Only
-    `define READ_ICACHE_TRANS_CORES   6'b01_0001 // R Only
-
 //---------- REGISTER MAP ------------//
 // 0x000 --> ENABLE/DISABLE CACHE BANKS                  // W Only
 // 0x004 --> FLUSH_ICACHE                                // W Only
@@ -71,7 +59,16 @@ module new_icache_ctrl_unit
    XBAR_PERIPH_BUS.Slave                       speriph_slave,
    NEW_ICACHE_CTRL_UNIT_BUS.Master             IC_ctrl_unit_master_if
 );
- 
+
+   localparam logic [5:0] REG_ENABLE_ICACHE         = 6'b00_0000;
+   localparam logic [5:0] REG_FLUSH_ICACHE          = 6'b00_0001;
+   localparam logic [5:0] REG_SEL_FLUSH_ICACHE      = 6'b00_0010;
+   localparam logic [5:0] REG_ICACHE_STATUS         = 6'b00_0011;
+   localparam logic [5:0] REG_CLEAR_CNTS            = 6'b00_0100;
+   localparam logic [5:0] REG_ENABLE_CNTS           = 6'b00_0101;
+   localparam logic [5:0] REG_READ_ICACHE_HIT_CORES = 6'b01_0000;
+   localparam logic [5:0] REG_READ_ICACHE_TRANS_CORES = 6'b01_0001;
+
    logic                                icache_status, icache_status_next;
    logic                                icache_bypass_req_o, icache_bypass_req_next;
    logic [NB_CORES:0]                   icache_bypass_ack_i;
@@ -174,7 +171,7 @@ begin
          icache_sel_flush_req_o  <= icache_sel_flush_req_next;
          icache_status           <= icache_status_next;
          
-         if((is_write == 1'b1) && ( addr[7:2] == 6'h02))
+         if((is_write == 1'b1) && ( addr[7:2] == REG_SEL_FLUSH_ICACHE))
             icache_sel_flush_addr_o <= wdata;
 
          if (FEATURE_STAT) begin
@@ -192,18 +189,18 @@ begin
             r_valid <= 1'b1;
             r_opc   <= 1'b0;
             casex ({addr[7:2], FEATURE_STAT})
-              {6'h03, 1'bx}: begin
+              {REG_ICACHE_STATUS, 1'bx}: begin
                 r_rdata[31:1] <= '0;
                 r_rdata[0]    <= icache_status;
               end
-              {6'h05, 1'b1}: begin
+              {REG_ENABLE_CNTS, 1'b1}: begin
                 r_rdata[31:1] <= '0;
                 r_rdata[0]    <= enable_regs;
               end
-              {6'h10, 1'b1}: begin
+              {REG_READ_ICACHE_HIT_CORES, 1'b1}: begin
                 r_rdata       <= hit_count;
               end
-              {6'h11, 1'b1}: begin
+              {REG_READ_ICACHE_TRANS_CORES, 1'b1}: begin
                 r_rdata       <= trans_count;
               end
               default: begin
@@ -250,7 +247,7 @@ begin
         end else if (is_write) begin
           casex ({addr[7:2], FEATURE_STAT})
 
-            {6'h00, 1'bx}: begin
+            {REG_ENABLE_ICACHE, 1'bx}: begin
               if (wdata[0]) begin
                 NS = ENABLE_ICACHE;
                 icache_bypass_req_next = 1'b0;
@@ -260,23 +257,23 @@ begin
               end
             end
 
-            {6'h01, 1'bx}: begin
+            {REG_FLUSH_ICACHE, 1'bx}: begin
               NS = FLUSH_ICACHE;
               icache_flush_req_next = 1'b1;
             end
 
-            {6'h02, 1'bx}: begin
+            {REG_SEL_FLUSH_ICACHE, 1'bx}: begin
               NS = SEL_FLUSH_ICACHE;
               icache_sel_flush_req_next = 1'b1;
             end
 
-            {6'h04, 1'b1}: begin // CLEAR
+            {REG_CLEAR_CNTS, 1'b1}: begin // CLEAR
               NS = IDLE;
               clear_regs = 1'b1;
               deliver_response = 1'b1;
             end
 
-            {6'h05, 1'b1}: begin // START
+            {REG_ENABLE_CNTS, 1'b1}: begin // START
               NS = IDLE;
               enable_regs_next = wdata[0];
               deliver_response = 1'b1;

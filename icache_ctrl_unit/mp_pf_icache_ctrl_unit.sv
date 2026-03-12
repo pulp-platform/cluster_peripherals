@@ -31,20 +31,6 @@
 //                                                                               //
 // ============================================================================= //
 
-    `define ENABLE_ICACHE     6'b00_0000
-    `define FLUSH_ICACHE      6'b00_0001
-    `define SEL_FLUSH_ICACHE  6'b00_0011
-
-    `define PF_SIZE           6'b00_1000
-    `define PF_ADDR           6'b00_1001
-
-    `define CLEAR_CNTS        6'b00_0100
-    `define ENABLE_CNTS       6'b00_0101
-
-    `define READ_ICACHE_HIT_CORES     6'b01_0000 // R Only
-    `define READ_ICACHE_TRANS_CORES   6'b01_0001 // R Only
-    `define READ_ICACHE_MISS_CORES    6'b01_0001 // R Only
-
 //-----------------------------------//
 
 
@@ -66,6 +52,14 @@ module mp_pf_icache_ctrl_unit
 );
 
     int unsigned                             i,j,k,x,y;
+
+    localparam logic [5:0] REG_ENABLE_ICACHE    = 6'b00_0000;
+    localparam logic [5:0] REG_FLUSH_ICACHE     = 6'b00_0001;
+    localparam logic [5:0] REG_SEL_FLUSH_ICACHE = 6'b00_0011;
+    localparam logic [5:0] REG_CLEAR_CNTS       = 6'b00_0100;
+    localparam logic [5:0] REG_ENABLE_CNTS      = 6'b00_0101;
+    localparam logic [5:0] REG_PF_SIZE          = 6'b00_1000;
+    localparam logic [5:0] REG_PF_ADDR          = 6'b00_1001;
 
     localparam NUM_REGS = 16;
 
@@ -179,15 +173,15 @@ module mp_pf_icache_ctrl_unit
  
    always_comb
    begin : REGISTER_BIND_OUT
-      icache_bypass_req_o     =  ~ICACHE_CTRL_REGS[`ENABLE_ICACHE];
-      icache_flush_req_o      =   ICACHE_CTRL_REGS[`FLUSH_ICACHE];
-      icache_sel_flush_addr_o =   ICACHE_CTRL_REGS[`SEL_FLUSH_ICACHE];
+      icache_bypass_req_o     =  ~ICACHE_CTRL_REGS[REG_ENABLE_ICACHE];
+      icache_flush_req_o      =   ICACHE_CTRL_REGS[REG_FLUSH_ICACHE];
+      icache_sel_flush_addr_o =   ICACHE_CTRL_REGS[REG_SEL_FLUSH_ICACHE];
 
-      pf_addr_o               =   ICACHE_CTRL_REGS[`PF_ADDR][31:0];
-      pf_size_o               =   ICACHE_CTRL_REGS[`PF_SIZE][7:0];
+      pf_addr_o               =   ICACHE_CTRL_REGS[REG_PF_ADDR][31:0];
+      pf_size_o               =   ICACHE_CTRL_REGS[REG_PF_SIZE][7:0];
 
       if (FEATURE_STAT) begin
-        enable_regs =   ICACHE_CTRL_REGS[`ENABLE_CNTS][NB_CACHE_BANKS-1:0];
+        enable_regs =   ICACHE_CTRL_REGS[REG_ENABLE_CNTS][NB_CACHE_BANKS-1:0];
       end
    end
 
@@ -215,17 +209,17 @@ module mp_pf_icache_ctrl_unit
 
         if (is_write) begin
           casex ({addr[7:2], FEATURE_STAT})
-            {`ENABLE_ICACHE, 1'bx}: ICACHE_CTRL_REGS[`ENABLE_ICACHE] <= {31'h0000_0000, wdata[0]};
-            {`FLUSH_ICACHE, 1'bx}: ICACHE_CTRL_REGS[`FLUSH_ICACHE]  <= {31'h0000_0000, wdata[0]};
-            {`SEL_FLUSH_ICACHE, 1'bx}: ICACHE_CTRL_REGS[`SEL_FLUSH_ICACHE] <= wdata;
-            {`PF_SIZE, 1'bx}: ICACHE_CTRL_REGS[`PF_SIZE] <= {28'h00_0000,wdata[7:0]};
-            {`PF_ADDR, 1'bx}: ICACHE_CTRL_REGS[`PF_ADDR] <= wdata[31:0];
-            {`CLEAR_CNTS, 1'b1}: ICACHE_CTRL_REGS[`CLEAR_CNTS] <= wdata;
-            {`ENABLE_CNTS, 1'b1}: ICACHE_CTRL_REGS[`ENABLE_CNTS] <= wdata;
+            {REG_ENABLE_ICACHE, 1'bx}: ICACHE_CTRL_REGS[REG_ENABLE_ICACHE] <= {31'h0000_0000, wdata[0]};
+            {REG_FLUSH_ICACHE, 1'bx}: ICACHE_CTRL_REGS[REG_FLUSH_ICACHE] <= {31'h0000_0000, wdata[0]};
+            {REG_SEL_FLUSH_ICACHE, 1'bx}: ICACHE_CTRL_REGS[REG_SEL_FLUSH_ICACHE] <= wdata;
+            {REG_PF_SIZE, 1'bx}: ICACHE_CTRL_REGS[REG_PF_SIZE] <= {28'h00_0000,wdata[7:0]};
+            {REG_PF_ADDR, 1'bx}: ICACHE_CTRL_REGS[REG_PF_ADDR] <= wdata[31:0];
+            {REG_CLEAR_CNTS, 1'b1}: ICACHE_CTRL_REGS[REG_CLEAR_CNTS] <= wdata;
+            {REG_ENABLE_CNTS, 1'b1}: ICACHE_CTRL_REGS[REG_ENABLE_CNTS] <= wdata;
           endcase
         end else begin
           if (clear_flush_reg) begin
-            ICACHE_CTRL_REGS[`FLUSH_ICACHE] <= 32'h0000_0000;
+            ICACHE_CTRL_REGS[REG_FLUSH_ICACHE] <= 32'h0000_0000;
           end
         end
 
@@ -239,13 +233,13 @@ module mp_pf_icache_ctrl_unit
         if (deliver_response == 1'b1) begin
           r_valid <= 1'b1;
           casex ({addr[7:2], FEATURE_STAT})
-            {`ENABLE_ICACHE,  1'bx}:  r_rdata <= ICACHE_CTRL_REGS[`ENABLE_ICACHE];
-            {`FLUSH_ICACHE,   1'bx}:  r_rdata <= ICACHE_CTRL_REGS[`FLUSH_ICACHE];
-            {`PF_SIZE,        1'bx}:  r_rdata <= ICACHE_CTRL_REGS[`PF_SIZE];
-            {`PF_ADDR,        1'bx}:  r_rdata <= ICACHE_CTRL_REGS[`PF_ADDR];
+            {REG_ENABLE_ICACHE,  1'bx}:  r_rdata <= ICACHE_CTRL_REGS[REG_ENABLE_ICACHE];
+            {REG_FLUSH_ICACHE,   1'bx}:  r_rdata <= ICACHE_CTRL_REGS[REG_FLUSH_ICACHE];
+            {REG_PF_SIZE,        1'bx}:  r_rdata <= ICACHE_CTRL_REGS[REG_PF_SIZE];
+            {REG_PF_ADDR,        1'bx}:  r_rdata <= ICACHE_CTRL_REGS[REG_PF_ADDR];
 
-            {`CLEAR_CNTS,     1'b1}:  r_rdata <= ICACHE_CTRL_REGS[`CLEAR_CNTS];
-            {`ENABLE_CNTS,    1'b1}:  r_rdata <= ICACHE_CTRL_REGS[`ENABLE_CNTS];
+            {REG_CLEAR_CNTS,     1'b1}:  r_rdata <= ICACHE_CTRL_REGS[REG_CLEAR_CNTS];
+            {REG_ENABLE_CNTS,    1'b1}:  r_rdata <= ICACHE_CTRL_REGS[REG_ENABLE_CNTS];
 
             {6'd16,           1'b1}:  r_rdata <= global_hit_count;
             {6'd17,           1'b1}:  r_rdata <= global_trans_count;
@@ -296,17 +290,17 @@ module mp_pf_icache_ctrl_unit
                   is_write = 1'b1;
 
                   casex ({addr[7:2], FEATURE_STAT})
-                    {`ENABLE_ICACHE,    1'bx}:  NS = (wdata == 0) ? DISABLE_ICACHE : ENABLE_ICACHE;
-                    {`FLUSH_ICACHE,     1'bx}:  NS = FLUSH_ICACHE_CHECK;
-                    {`SEL_FLUSH_ICACHE, 1'bx}:  NS = SEL_FLUSH_ICACHE;
-                    {`PF_SIZE,          1'bx}: begin
+                    {REG_ENABLE_ICACHE,    1'bx}:  NS = (wdata == 0) ? DISABLE_ICACHE : ENABLE_ICACHE;
+                    {REG_FLUSH_ICACHE,     1'bx}:  NS = FLUSH_ICACHE_CHECK;
+                    {REG_SEL_FLUSH_ICACHE, 1'bx}:  NS = SEL_FLUSH_ICACHE;
+                    {REG_PF_SIZE,          1'bx}: begin
                       deliver_response = 1'b1;
                       NS = IDLE;
                     end
-                    {`PF_ADDR,          1'bx}:  NS = TRIGGER_PF;
+                    {REG_PF_ADDR,          1'bx}:  NS = TRIGGER_PF;
 
-                    {`CLEAR_CNTS,       1'b1}:  NS = CLEAR_STAT_REGS;
-                    {`ENABLE_CNTS,      1'b1}:  NS = ENABLE_STAT_REGS;
+                    {REG_CLEAR_CNTS,       1'b1}:  NS = CLEAR_STAT_REGS;
+                    {REG_ENABLE_CNTS,      1'b1}:  NS = ENABLE_STAT_REGS;
 
                     default:                    NS = IDLE;
                   endcase
@@ -322,7 +316,7 @@ module mp_pf_icache_ctrl_unit
           CLEAR_STAT_REGS: begin
             if (FEATURE_STAT) begin
               for (x=0; x<NB_CACHE_BANKS; x++) begin
-                clear_regs[x] = ICACHE_CTRL_REGS[`CLEAR_CNTS][x];
+                clear_regs[x] = ICACHE_CTRL_REGS[REG_CLEAR_CNTS][x];
               end
               deliver_response = 1'b1;
             end

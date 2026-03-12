@@ -31,16 +31,6 @@
 //                                                                               //
 // ============================================================================= //
 
-    `define log2(VALUE) ((VALUE) < ( 1 ) ? 0 : (VALUE) < ( 2 ) ? 1 : (VALUE) < ( 4 ) ? 2 : (VALUE)< (8) ? 3:(VALUE) < ( 16 )  ? 4 : (VALUE) < ( 32 )  ? 5 : (VALUE) < ( 64 )  ? 6 : (VALUE) < ( 128 ) ? 7 : (VALUE) < ( 256 ) ? 8 : (VALUE) < ( 512 ) ? 9 : 10)
-
-    `define ENABLE_ICACHE 6'b00_0000
-    `define FLUSH_ICACHE  6'b00_0001
-    `define FLUSH_L0      6'b00_0010
-
-    `define CLEAR_CNTS    6'b00_0011 
-    `define ENABLE_CNTS   6'b00_0100
-
-
 //---------- REGISTER MAP ------------//
 // 0x000 --> ENABLE/DISABLE CACHE BANKS                 --> MAX 32 bit, up to 32 banks --> need register --> [NB_CACHE_BANKS-1:0]
 // 0x004 --> FLUSH_ICACHE                               --> MAX 32 bit, up to 32 banks --> need register --> [NB_CACHE_BANKS-1:0]
@@ -84,6 +74,12 @@ module icache_ctrl_unit
 );
 
     int unsigned                             i,j,k,x,y;
+
+    localparam logic [5:0] REG_ENABLE_ICACHE = 6'b00_0000;
+    localparam logic [5:0] REG_FLUSH_ICACHE  = 6'b00_0001;
+    localparam logic [5:0] REG_FLUSH_L0      = 6'b00_0010;
+    localparam logic [5:0] REG_CLEAR_CNTS    = 6'b00_0011;
+    localparam logic [5:0] REG_ENABLE_CNTS   = 6'b00_0100;
 
     localparam NUM_REGS = FEATURE_STAT ? 5 : 3;
 
@@ -169,7 +165,7 @@ module icache_ctrl_unit
 
   genvar index;
 
-  assign flush_FetchBuffer = ICACHE_CTRL_REGS[`FLUSH_L0][NB_CORES-1:0];
+  assign flush_FetchBuffer = ICACHE_CTRL_REGS[REG_FLUSH_L0][NB_CORES-1:0];
 
   generate
         for(index = 0; index < NB_CORES; index++)
@@ -201,11 +197,11 @@ module icache_ctrl_unit
    begin : REGISTER_BIND_OUT
         for(k=0; k<NB_CACHE_BANKS; k++)
         begin
-            req_enable[k]  =   ICACHE_CTRL_REGS[`ENABLE_ICACHE][k];
-            req_disable[k] =  ~ICACHE_CTRL_REGS[`ENABLE_ICACHE][k];
-            req_flush[k]   =   ICACHE_CTRL_REGS[`FLUSH_ICACHE] [k];
+            req_enable[k]  =   ICACHE_CTRL_REGS[REG_ENABLE_ICACHE][k];
+            req_disable[k] =  ~ICACHE_CTRL_REGS[REG_ENABLE_ICACHE][k];
+            req_flush[k]   =   ICACHE_CTRL_REGS[REG_FLUSH_ICACHE] [k];
             if (FEATURE_STAT) begin
-              enable_regs[k] =   ICACHE_CTRL_REGS[`ENABLE_CNTS][k];
+              enable_regs[k] =   ICACHE_CTRL_REGS[REG_ENABLE_CNTS][k];
             end
         end
    end
@@ -324,17 +320,17 @@ module icache_ctrl_unit
           case(addr[7:0])
               8'h00: // ENABLE-DISABLE
               begin
-                    ICACHE_CTRL_REGS[`ENABLE_ICACHE] <= wdata;
+                    ICACHE_CTRL_REGS[REG_ENABLE_ICACHE] <= wdata;
               end
 
               8'h04: // FLUSH
               begin
-                ICACHE_CTRL_REGS[`FLUSH_ICACHE] <= wdata;
+                ICACHE_CTRL_REGS[REG_FLUSH_ICACHE] <= wdata;
               end
 
               8'h0C:
               begin
-                  ICACHE_CTRL_REGS[`FLUSH_L0] <= wdata;
+                  ICACHE_CTRL_REGS[REG_FLUSH_L0] <= wdata;
               end
 
               8'hF0:
@@ -344,29 +340,29 @@ module icache_ctrl_unit
 
               8'h10: // CLEAR
               if (FEATURE_STAT) begin
-                ICACHE_CTRL_REGS[`CLEAR_CNTS] <= wdata;
+                ICACHE_CTRL_REGS[REG_CLEAR_CNTS] <= wdata;
               end
 
               8'h14: // ENABLE-DISABLE STAT REGS
               if (FEATURE_STAT) begin
-                ICACHE_CTRL_REGS[`ENABLE_CNTS] <= wdata;
+                ICACHE_CTRL_REGS[REG_ENABLE_CNTS] <= wdata;
               end
           endcase
         end
 
         if(clear_ack_flush)
         begin
-            ICACHE_CTRL_REGS[`FLUSH_L0] <= '0;
+            ICACHE_CTRL_REGS[REG_FLUSH_L0] <= '0;
         end
 
         // sample the ID
         if(req & gnt)
         begin
           r_id    <= id;
-          if((wen == 1'b0) && (addr[7:2] == `ENABLE_ICACHE))
+          if((wen == 1'b0) && (addr[7:2] == REG_ENABLE_ICACHE))
               mask_ack_enable <= ~wdata;
 
-          if((wen == 1'b0) && (addr[7:2] == `FLUSH_L0))
+          if((wen == 1'b0) && (addr[7:2] == REG_FLUSH_L0))
               mask_ack_flush <= ~wdata;
         end
 
@@ -378,16 +374,16 @@ module icache_ctrl_unit
 
           if (addr[7:2] <= 3) begin
             case(addr[7:2])
-              0: r_rdata <= ICACHE_CTRL_REGS[`ENABLE_ICACHE];
-              1: r_rdata <= ICACHE_CTRL_REGS[`FLUSH_ICACHE];
+              0: r_rdata <= ICACHE_CTRL_REGS[REG_ENABLE_ICACHE];
+              1: r_rdata <= ICACHE_CTRL_REGS[REG_FLUSH_ICACHE];
               2: r_rdata <= pending_trans;
-              3: r_rdata <= ICACHE_CTRL_REGS[`FLUSH_L0];
+              3: r_rdata <= ICACHE_CTRL_REGS[REG_FLUSH_L0];
             endcase
           end else if (FEATURE_STAT && addr[7:2] <= 13) begin
             case (addr[7:2])
               // Clear and start
-               4: r_rdata <= ICACHE_CTRL_REGS[`CLEAR_CNTS];
-               5: r_rdata <= ICACHE_CTRL_REGS[`ENABLE_CNTS];
+               4: r_rdata <= ICACHE_CTRL_REGS[REG_CLEAR_CNTS];
+               5: r_rdata <= ICACHE_CTRL_REGS[REG_ENABLE_CNTS];
 
                6: r_rdata <= hit_count[0];
                7: r_rdata <= hit_count[1];
@@ -497,7 +493,7 @@ module icache_ctrl_unit
           CLEAR_STAT_REGS: begin
             if (FEATURE_STAT) begin
               for(x=0; x<NB_CACHE_BANKS; x++) begin
-                clear_regs[x]  =   ICACHE_CTRL_REGS[`CLEAR_CNTS][x];
+                clear_regs[x]  =   ICACHE_CTRL_REGS[REG_CLEAR_CNTS][x];
               end
               deliver_response = 1'b1;
             end
