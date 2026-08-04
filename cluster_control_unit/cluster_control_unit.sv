@@ -135,8 +135,9 @@ import hci_package::*;
 
   // Invert HCI interconnect priority from CORES > HWPE to HWPE > CORES
   assign hci_ctrl_o.invert_prio        = hci_ctrl_q[8];
-  // Max number of (consecutive) stalls supported
-  assign hci_ctrl_o.low_prio_max_stall = hci_ctrl_q[7:0];
+  // Max number of (consecutive) stalls supported - this is currently set to the default of HCI < v2.4
+  assign hci_ctrl_o.priority_cnt_numerator = hci_ctrl_q[7:0];
+  assign hci_ctrl_o.priority_cnt_denominator = hci_ctrl_q[7:0]+1;
 
   always_comb
   begin
