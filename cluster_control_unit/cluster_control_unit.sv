@@ -356,7 +356,7 @@ import hci_package::*;
       hwpe_en_o         <= 1'b0;
       hwpe_sel_o        <= 1'b0;
 
-      idma_en_o      <= 1'b1;
+      idma_en_o      <= 1'b0;
 
       hci_ctrl_q        <= '0;
 
